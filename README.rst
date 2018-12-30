@@ -80,3 +80,4 @@ Usage
     Format String:          {YYYY}{DD}{MM}_{hh}{mm}{ss}_Dustin
     File Name:              20131020_164239.jpg
     Successful Command:     python smart-image-renamer.py -f {YYYY}{MM}{DD}_{hh}{mm}{ss}_Dustin -c -d C:\Pictures\Dustin-Renamed -r -v input C:\Pictures\Dustin
+    Final Command:          python smart-image-renamer.py -f {YYYY}{MM}{DD}_{hh}{mm}{ss}_Caryl -m "%Y:%m:%d %H:%M:%S" -c -d C:\Pictures\Renamed -r -v input "C:\Pictures\Caryl\iPhone 6\118APPLE"

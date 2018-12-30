@@ -376,8 +376,7 @@ if __name__ == '__main__':
                         else:
                             move2dest(old_file_name, new_file_name_complete)
                     except OSError:
-                        skipped_files.append((old_file_name,
-                                              'Failed to rename file'))
+                        skipped_files.append((old_file_name, 'Failed to rename file'))
                         continue
 
                 if verbose:
