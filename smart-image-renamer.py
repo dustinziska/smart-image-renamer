@@ -20,27 +20,42 @@
 
 """Smart Image Renamer main module"""
 
+"""IMG Rename Imports"""
 import argparse
 import itertools
 import os
 import re
 import shutil
 
+"""MOV Rename Imports"""
+import sys
+import time
+import struct
+import glob
+
 from PIL import Image
 from PIL.ExifTags import TAGS
 
 from _version import __version__
 
+class Atom():
+    """
+    MOV file atom.
+    'type' and 'header' are bytes
+    """
+    def __init__(self, type, header, size):
+        self.type = type
+        self.name = self.type.decode()
+        self.header = header
+        self.size = size
 
 class NotAnImageFile(Exception):
     """This file is not an Image"""
     pass
 
-
 class InvalidExifData(Exception):
     """Could not find any EXIF or corrupted EXIF"""
     pass
-
 
 def get_cmd_args():
     """Get, process and return command line arguments to the script
@@ -80,7 +95,9 @@ Examples:
                                      formatter_class=argparse.RawTextHelpFormatter,
                                      epilog=help_epilog)
     parser.add_argument('-f', dest='format', required=True, type=str,
-                        help='Format of the new file name')
+                        help='Format of the new image file name')
+    parser.add_argument('-m', dest='movformat', required=True, type=str,
+                        help='Format of the new mov file name')
     parser.add_argument('-s', dest='sequence', type=int, default=1,
                         help='Starting sequence number (default: 1)')
     parser.add_argument('-r', dest='recursive', default=False,
@@ -103,7 +120,6 @@ Examples:
                         help='Absolute path to file or directory')
 
     return parser.parse_args()
-
 
 def get_exif_data(img_file):
     """Read EXIF data from the image.
@@ -134,6 +150,118 @@ def get_exif_data(img_file):
     exif_data['format'] = img.format
     return exif_data
 
+def atom_header_correct(movie_file, atom):
+    """
+    Check if atom header is correct.
+    :param movie_file:
+    :param atom:
+    :return:
+    """
+    if movie_file.read(8)[4:8] == atom.header:
+        return True
+    else:
+        return False
+    
+def find_atom(movie_file, atom):
+    """
+    Search for desired atom.
+    :param movie_file:
+    returns False if not found
+    """
+
+    while True:
+        try:
+            atom_size, atom_type = struct.unpack('>L4s', movie_file.read(8))
+        except:
+            break
+
+        if atom_type == atom.type and atom_header_correct(movie_file, atom):
+            return True
+
+        else:
+            if atom_size < 8:
+                break
+            movie_file.seek(atom_size - 8, os.SEEK_CUR)
+
+    return False
+    
+def seek_to_atom_header_end(movie_file, atom):
+    """
+    Seek to the end of 'atom' in 'movie_file'.
+    """
+    movie_file.seek(atom.size, 1)
+
+def get_file_timestamps(filename, timestamp_format):
+    """
+    Get list of system and QT timestamps from file
+    """
+
+    file_timestamps = {'file': [0, 0]}  # Will contain all time values we will find
+
+    # Get file mtime
+    file_timestamps['file'][1] = os.path.getmtime(filename)
+    
+    # Get moov timestamps
+    file_timestamps.update(get_mov_data(filename))
+    
+    # Format all timestamps according to provided template
+    try:
+        format_time(file_timestamps, timestamp_format)
+    except ValueError:
+        print('Error in time format "{0}."'.format(timestamp_format))
+        sys.exit(1)
+    
+    return file_timestamps
+    
+def format_time(timestamps, time_format):
+    """
+    Format timestamps according to provided template
+    """
+    for timestamp_type in timestamps:
+        for time_item in range(len(timestamps[timestamp_type])):
+            timestamps[timestamp_type][time_item] = time.strftime(
+                time_format,
+                time.localtime(timestamps[timestamp_type][time_item])
+            )
+    
+def read_timestamps(filename):
+    """
+    Read creation and modification time given the beginning of atom
+    """
+    QT_EPOCH = 2082844800
+    filename.seek(4, 1)
+    creation_time = struct.unpack('>I', filename.read(4))[0] - QT_EPOCH
+    modification_time = struct.unpack('>I', filename.read(4))[0] - QT_EPOCH
+    return [creation_time, modification_time]
+    
+def get_mov_data(filename):
+    """
+    Get movie creation time from QT movie atom. Returns zero timestamps in case of error.
+    Looks in 'moov', 'trak' and 'mdia' first found headers
+    """
+    timestamps = {'moov': [0, 0], 'trak': [0, 0], 'mdia': [0, 0]}
+
+    with open(filename, 'r+b') as movie_file:
+        moov_atom = Atom(b'moov', b'mvhd', 88)
+        if not find_atom(movie_file, moov_atom):
+            return timestamps
+
+        timestamps[moov_atom.name] = read_timestamps(movie_file)
+        seek_to_atom_header_end(movie_file, moov_atom)
+
+        trak_atom = Atom(b'trak', b'tkhd', 72)
+        if not find_atom(movie_file, trak_atom):
+            return timestamps
+        timestamps[trak_atom.name] = read_timestamps(movie_file)
+        seek_to_atom_header_end(movie_file, trak_atom)
+
+        mdia_atom = Atom(b'mdia', b'mdhd', 12)
+        if not find_atom(movie_file, mdia_atom):
+            return timestamps
+        timestamps[mdia_atom.name] = read_timestamps(movie_file)
+
+    return timestamps
+    
 def move2dest(old, new, copy=False):
     parent = os.path.dirname(new)
     if not os.path.exists(parent):
@@ -149,6 +277,7 @@ if __name__ == '__main__':
 
     input_paths = [os.path.abspath(input) for input in args.input]
     input_format = args.format
+    input_mov_format = args.movformat
     verbose = args.verbose
     quiet = args.quiet
     sequence_start = args.sequence
@@ -180,18 +309,21 @@ if __name__ == '__main__':
                     # Get EXIF data from the image
                     exif_data = get_exif_data(old_file_name)
                 except NotAnImageFile:
+                    # Not an Image, try for Movie
+                    timestamps = get_file_timestamps(old_file_name, input_mov_format)
+                    print("Movie Timestamps = " + str(timestamps['moov'][0]))
                     continue
                 except InvalidExifData:
                     skipped_files.append((old_file_name, 'No EXIF data found'))
                     continue
 
                 # Find out the original timestamp or digitized timestamp from the EXIF
-                img_timestamp = (exif_data.get('DateTimeOriginal') or
-                                 exif_data.get('DateTimeDigitized'))
+                img_timestamp = (exif_data.get('DateTimeOriginal') or exif_data.get('DateTimeDigitized'))
+                # TODO
+                print("Image TimeStamp = " + str(img_timestamp))
 
                 if not img_timestamp:
-                    skipped_files.append((old_file_name,
-                                          'No timestamp found in image EXIF'))
+                    skipped_files.append((old_file_name, 'No timestamp found in image EXIF'))
                     continue
 
                 # Extract year, month, day, hours, minutes, seconds from timestamp

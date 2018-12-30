@@ -76,3 +76,7 @@ Usage
     Format String:          {YYYY}{DD}{MM}_{Model}_Beach_Shoot_{Seq}
     File Name:              20140429_PENTAX K-x_Beach_Shoot_001.JPEG
                             20140429_PENTAX K-x_Beach_Shoot_002.JPEG
+
+    Format String:          {YYYY}{DD}{MM}_{hh}{mm}{ss}_Dustin
+    File Name:              20131020_164239.jpg
+    Successful Command:     python smart-image-renamer.py -f {YYYY}{MM}{DD}_{hh}{mm}{ss}_Dustin -c -d C:\Pictures\Dustin-Renamed -r -v input C:\Pictures\Dustin
