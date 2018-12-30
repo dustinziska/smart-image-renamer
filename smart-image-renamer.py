@@ -354,7 +354,7 @@ if __name__ == '__main__':
                                       'Folder': os.path.basename(root),
                                       'File': os.path.splitext(f)[0],
                                       'Seq': '{0:0{1}d}'.format(next(seq), seq_width),
-                                      'ext': ''
+                                      'ext': 'MOV'
                                       }
                     new_image_data.update(mov_timestamp.groupdict())
                 else:
