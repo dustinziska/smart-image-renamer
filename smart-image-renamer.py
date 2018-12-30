@@ -305,48 +305,61 @@ if __name__ == '__main__':
                     continue
 
                 old_file_name = os.path.join(root, f)
+                # Define Variables
+                exif_data = None
+                img_timestamp = None
+                mov_timestamp = None
                 try:
                     # Get EXIF data from the image
                     exif_data = get_exif_data(old_file_name)
+                    # Find out the original timestamp or digitized timestamp from the EXIF
+                    img_timestamp = (exif_data.get('DateTimeOriginal') or exif_data.get('DateTimeDigitized'))
+                    # 
+                    if img_timestamp:
+                        # Extract year, month, day, hours, minutes, seconds from timestamp
+                        img_timestamp =\
+                            re.search(r'(?P<YYYY>\d\d\d?\d?):(?P<MM>\d\d?):(?P<DD>\d\d?) '
+                                    '(?P<hh>\d\d?):(?P<mm>\d\d?):(?P<ss>\d\d?)',
+                                    img_timestamp.strip())
                 except NotAnImageFile:
-                    # Not an Image, try for Movie
+                    # Get EXIF fails on movies, so try to get movie timestamp
                     timestamps = get_file_timestamps(old_file_name, input_mov_format)
-                    print("Movie Timestamps = " + str(timestamps['moov'][0]))
-                    continue
+                    # Find out the original timestamp
+                    mov_timestamp = timestamps['moov'][0]
+                    # Extract year, month, day, hours, minutes, seconds from timestamp
+                    mov_timestamp =\
+                        re.search(r'(?P<YYYY>\d\d\d?\d?):(?P<MM>\d\d?):(?P<DD>\d\d?) '
+                                  '(?P<hh>\d\d?):(?P<mm>\d\d?):(?P<ss>\d\d?)',
+                                  mov_timestamp.strip())
                 except InvalidExifData:
                     skipped_files.append((old_file_name, 'No EXIF data found'))
                     continue
-
-                # Find out the original timestamp or digitized timestamp from the EXIF
-                img_timestamp = (exif_data.get('DateTimeOriginal') or exif_data.get('DateTimeDigitized'))
-                # TODO
-                print("Image TimeStamp = " + str(img_timestamp))
-
-                if not img_timestamp:
-                    skipped_files.append((old_file_name, 'No timestamp found in image EXIF'))
+                
+                if img_timestamp:
+                    # Generate data to be replaced in user provided format
+                    new_image_data = {'Artist': exif_data.get('Artist', ''),
+                                      'Make': exif_data.get('Make', ''),
+                                      'Model': exif_data.get('Model', ''),
+                                      'Folder': os.path.basename(root),
+                                      'File': os.path.splitext(f)[0],
+                                      'Seq': '{0:0{1}d}'.format(next(seq), seq_width),
+                                      'ext': exif_data.get('format', '')
+                                      }
+                    new_image_data.update(img_timestamp.groupdict())
+                elif mov_timestamp:
+                    # Generate data to be replaced in user provided format
+                    new_image_data = {'Artist': '',
+                                      'Make': '',
+                                      'Model': '',
+                                      'Folder': os.path.basename(root),
+                                      'File': os.path.splitext(f)[0],
+                                      'Seq': '{0:0{1}d}'.format(next(seq), seq_width),
+                                      'ext': ''
+                                      }
+                    new_image_data.update(mov_timestamp.groupdict())
+                else:
+                    skipped_files.append((old_file_name, 'Timestamp not in correct format'))
                     continue
-
-                # Extract year, month, day, hours, minutes, seconds from timestamp
-                img_timestamp =\
-                    re.search(r'(?P<YYYY>\d\d\d?\d?):(?P<MM>\d\d?):(?P<DD>\d\d?) '
-                              '(?P<hh>\d\d?):(?P<mm>\d\d?):(?P<ss>\d\d?)',
-                              img_timestamp.strip())
-
-                if not img_timestamp:
-                    skipped_files.append((old_file_name,
-                                          'Timestamp not in correct format'))
-                    continue
-
-                # Generate data to be replaced in user provided format
-                new_image_data = {'Artist': exif_data.get('Artist', ''),
-                                  'Make': exif_data.get('Make', ''),
-                                  'Model': exif_data.get('Model', ''),
-                                  'Folder': os.path.basename(root),
-                                  'File': os.path.splitext(f)[0],
-                                  'Seq': '{0:0{1}d}'.format(next(seq), seq_width),
-                                  'ext': exif_data.get('format', '')
-                                  }
-                new_image_data.update(img_timestamp.groupdict())
 
                 # Generate new file name according to user provided format
                 new_file_name = (input_format + '.{ext}').format(**new_image_data)
@@ -368,8 +381,7 @@ if __name__ == '__main__':
                         continue
 
                 if verbose:
-                    print('{0} --> {1}'.format(old_file_name,
-                                             new_file_name_complete))
+                    print('{0} --> {1}'.format(old_file_name, new_file_name_complete))
                 elif not quiet:
                     print('{0} --> {1}'.format(f, new_file_name))
 
